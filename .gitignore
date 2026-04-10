@@ -1,0 +1,10 @@
+# Sensitive tokens
+.bolt-api-token
+*.token
+*.key
+
+# Claude local settings
+.claude/settings.local.json
+
+# OS files
+.DS_Store
