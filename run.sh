@@ -26,6 +26,9 @@ echo "  Transaction Lifecycle Agent"
 echo "  Create + Move to PAYMENT_ACCEPTED"
 echo "========================================="
 echo ""
+echo "  Default agent: 767fbf84-afbf-4346-aad0-5e262259c657"
+echo "  (Press Enter at the agent prompt to use it)"
+echo ""
 
 if [ ! -f "$HOME/.bolt-api-token" ]; then
   echo "WARNING: ~/.bolt-api-token not found."

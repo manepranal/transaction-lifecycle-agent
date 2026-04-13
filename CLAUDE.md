@@ -39,8 +39,9 @@ Ask each question individually. Wait for the answer before asking the next.
 > Which environment? `team1` | `team2` | `team3` | `team4` | `team5` | `staging` | `play`
 
 **Q2 — New or existing agent:**
-> Do you want to **(1) create a new agent** or **(2) use an existing active agent**?
+> Do you want to **(1) create a new agent**, **(2) use an existing agent**, or just press **Enter** to use the default QA agent?
 
+- If **Enter / default** → use agent ID `767fbf84-afbf-4346-aad0-5e262259c657` on team2, skip to **Q3**
 - If **1 (new agent)** → go to **Step 2A**
 - If **2 (existing agent)** → go to **Step 2B**
 
