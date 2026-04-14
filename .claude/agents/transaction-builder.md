@@ -1,6 +1,6 @@
 ---
 name: transaction-builder
-description: "Creates one real estate transaction via the arrakis REST API. Handles the full builder flow: create empty builder → set location → set owner → set price/deal type → set buyer/seller → set commission info → set commission payer (Canadian) → add lawyers (Canadian) → set personal deal → submit. Returns the transaction ID."
+description: "Creates one real estate transaction via the arrakis REST API. Handles the full builder flow: create empty builder → set location → set owner → set price/deal type → set buyer/seller → set commission info → set commission payer (always: TITLE for US, SELLERS_LAWYER for Canadian) → add lawyers (Canadian only) → set personal deal → submit. Returns the transaction ID."
 tools: Bash
 model: sonnet
 maxTurns: 30
@@ -34,15 +34,19 @@ Extract `id` → BUILDER_ID.
 **Must be before owner-info.**
 
 For **US** (`IS_CANADIAN=false`):
+
+**IMPORTANT:** The `state` must match the state of the agent's office (from the OFFICE_ID resolved in Step 3b of the orchestrator). If the office is in NEW_JERSEY use `NEW_JERSEY`; if NEW_YORK use `NEW_YORK`; etc. A mismatch causes a 400 at submit time.
+
+Default (NEW_JERSEY office):
 ```bash
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/location-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "street": "123 QA Test St",
-    "city": "Austin",
-    "state": "TEXAS",
-    "zip": "78701",
+    "city": "Newark",
+    "state": "NEW_JERSEY",
+    "zip": "07101",
     "yearBuilt": 2000,
     "mlsNumber": "QA-MLS-001"
   }'
@@ -70,7 +74,7 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/locat
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/owner-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"ownerAgent": {"agentId": "{AGENT_ID}"}, "officeId": "{OFFICE_ID}"}'
+  -d '{"ownerAgent": {"agentId": "{AGENT_ID}", "role": "REAL"}, "officeId": "{OFFICE_ID}"}'
 ```
 
 Save the full response. Extract `agentsInfo.ownerAgent[0].id` → PARTICIPANT_ID.
@@ -121,8 +125,8 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/buyer
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "buyers": [{"firstName": "QA", "lastName": "Buyer", "email": "qa-buyer@playwright-example.com", "address": "456 Buyer St, Austin, TX 78701"}],
-    "sellers": [{"firstName": "QA", "lastName": "Seller", "email": "qa-seller@playwright-example.com", "address": "789 Seller Rd, Austin, TX 78701"}]
+    "buyers": [{"firstName": "QA", "lastName": "Buyer", "email": "qa-buyer@playwright-example.com", "address": "456 Buyer St, Newark, NJ 07101"}],
+    "sellers": [{"firstName": "QA", "lastName": "Seller", "email": "qa-seller@playwright-example.com", "address": "789 Seller Rd, Newark, NJ 07101"}]
   }'
 ```
 
@@ -147,15 +151,29 @@ Body is a **JSON array** with the PARTICIPANT_ID from Step 3:
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/commission-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "[{\"participantId\": \"{PARTICIPANT_ID}\", \"commission\": {\"percent\": 100, \"percentEnabled\": true}}]"
+  -d "[{\"participantId\": \"{PARTICIPANT_ID}\", \"commission\": {\"commissionPercent\": 100, \"percentEnabled\": true}}]"
 ```
 
 ---
 
-### Step 7 — Set commission-payer (Canadian only)
+### Step 7 — Set commission-payer
 
-Only if `IS_CANADIAN=true`. Uses **multipart/form-data** (`-F` flags, not JSON):
+Always required. Uses **multipart/form-data** (`-F` flags, not JSON).
 
+For **US** (`IS_CANADIAN=false`):
+```bash
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/commission-payer" \
+  -H "Authorization: Bearer {AGENT_TOKEN}" \
+  -F "role=TITLE" \
+  -F "firstName=QA" \
+  -F "lastName=TitleCompany" \
+  -F "companyName=QA Title Co" \
+  -F "email=qa-title@playwright-example.com" \
+  -F "phoneNumber=18005551234" \
+  -F "address=100 Title Ave, Newark, NJ 07101"
+```
+
+For **Canadian** (`IS_CANADIAN=true`):
 ```bash
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/commission-payer" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \

@@ -217,6 +217,56 @@ If any closer returns ERROR, report it in the summary.
 
 ---
 
+## Step 7 — Continue or exit
+
+After printing the summary, ask:
+
+> Would you like to create more transactions or are you done?
+> Type **`more`** to continue or **`exit`** to quit.
+
+### If user says `exit` (or "done", "no", "quit"):
+Print:
+```
+All done! Goodbye.
+```
+Then stop.
+
+### If user says `more` (or "yes", "continue"):
+
+Ask all questions again **one at a time**, exactly as in Step 1:
+
+**Q1 — Environment:**
+> Same environment (`{current_env}`) or a different one?
+> Press **Enter** to keep `{current_env}`, or type a new one: `team1` | `team2` | `team3` | `team4` | `team5` | `staging` | `play`
+
+- If Enter → reuse the current environment and its base URLs.
+- If new env → update ARRAKIS_BASE_URL, KEYMAKER_BASE_URL, YENTA_BASE_URL accordingly.
+
+**Q2 — New or existing agent:**
+> Same agent (`{current_agent_id}`) or a different one?
+> Press **Enter** to keep the same agent, **(1) create a new agent**, or **(2) use a different existing agent**.
+
+- If Enter → reuse AGENT_ID, OFFICE_ID, IS_CANADIAN, CURRENCY from the previous round.
+- If **1** → go to Step 2A to create a new agent, then re-resolve office (Step 3b).
+- If **2** → go to Step 2B to look up a different agent, then re-resolve office (Step 3b).
+
+**Q3 — Deal type:**
+> Deal type? `Sale` | `Lease` | `Both`
+
+**Q4 — Transaction count:**
+> How many transactions to create? (default: 1)
+
+**Q5 — Admin credentials:**
+> Same admin credentials or different?
+> Press **Enter** to reuse the existing admin token, or provide new credentials.
+
+- If Enter → reuse the existing ADMIN_TOKEN (skip re-login).
+- If new credentials → repeat Step 3a (login via keymaker) to get a fresh ADMIN_TOKEN.
+
+After collecting answers, proceed directly to **Step 4** (spawn builders) → **Step 5** (spawn closers) → **Step 6** (print summary) → **Step 7** (continue or exit).
+
+---
+
 ## Hard rules — never break these
 
 - Always ask Q1–Q4 one at a time. Never batch multiple questions.
@@ -231,12 +281,21 @@ If any closer returns ERROR, report it in the summary.
 - **Always spawn all closers in a single parallel message** — never loop and spawn one at a time.
 - If a builder agent returns ERROR, report it but still spawn closers for the successful IDs.
 - Location-info must be set **BEFORE** owner-info (enforced inside the builder agent).
+- The transaction location state must match a state where the agent is licensed (from their yenta office list). Using a mismatched state causes "not licensed in the state where this property is located" error at submit time.
 - `officeId` is a top-level field in owner-info request, NOT inside `ownerAgent`.
+- `ownerAgent` in owner-info request **must include `"role": "REAL"`** — omitting it causes a server-side NullPointerException in `removeTeamLeaders`.
+- Always use the **admin token** (`pwadmin`) as the AGENT_TOKEN for builder agents — do NOT attempt to get a separate agent token. The admin token works for all arrakis operations.
 - Commission-info body is a **JSON array** (not wrapped object).
 - The `participantId` in commission-info must be the **transaction-participant UUID** from the builder response (`agentsInfo.ownerAgent[0].id`), NOT the agent's yentaId.
-- Commission payer endpoint is **multipart/form-data** (use `-F` flags, not JSON).
+- Commission payer endpoint is **always required** (not Canadian-only) and uses **multipart/form-data** (use `-F` flags, not JSON). US transactions use `role=TITLE`; Canadian transactions use `role=SELLERS_LAWYER`.
 - `closingDate` is the correct field name (not `estimatedClosingDate`).
 - For Canadian transactions: buyer, sellers lawyer, and buyers lawyer must all have `emailAddress`, `address`, and the sellers lawyer must have a company name via `paidViaBusinessEntity.name`.
 - If `commission-validated` is called when CDA is already approved, the state may skip directly to `COMMISSION_DOCUMENT_SENT`.
 - After `approved-for-closing`: always confirm commission deposit → close → payment-accepted.
 - Always print the bolt UI link in the summary for every transaction.
+- After every summary, always ask Step 7 (continue or exit) — never stop without asking.
+- When looping, ask Q1–Q5 **one at a time**. Never batch them.
+- When the user keeps the same environment, reuse base URLs and admin token (unless they request new credentials).
+- When the user keeps the same agent, reuse AGENT_ID, OFFICE_ID, IS_CANADIAN, CURRENCY — skip Step 3b.
+- When the agent changes (new or different), always re-run Step 3b to re-resolve the office ID.
+- When the environment changes, always re-run Step 3a to get a fresh admin token for the new env.
