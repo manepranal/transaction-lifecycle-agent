@@ -46,7 +46,7 @@ Ask each question individually. Wait for the answer before asking the next.
 - If **2 (existing agent)** → go to **Step 2B**
 
 **Q3 — Deal type:**
-> Deal type? `Sale` | `Lease` | `Both` (creates one Sale + one Lease per batch)
+> Deal type? `Sale` | `Lease` | `Both` (creates one Sale + one Lease per batch) | `Listing` (creates listing → transitions to LISTING_IN_CONTRACT with linked in-contract transaction)
 
 **Q4 — Transaction count:**
 > How many transactions to create? (default: 1)
@@ -140,6 +140,58 @@ for o in d.get('offices', []):
 - Save as OFFICE_ID
 - Determine IS_CANADIAN (true if `accountCountry` is `CANADA`, false otherwise)
 - Determine CURRENCY (`CAD` for Canadian, `USD` for US)
+
+---
+
+## Step 3b — (Listing only) Ask for team ID
+
+If Q3 was `Listing`, ask:
+> Team ID (UUID) for the listing — or press **Enter** to skip team connection.
+
+Save as TEAM_ID (may be empty).
+
+Also ask:
+> How many listings to create? (default: 1)
+> Deal type for listings? `Sale` (SELLER) | `Lease` (LANDLORD) | `Both`
+
+Then spawn **listing-in-contract** agents (Step 4b) instead of the regular builder flow.
+
+---
+
+## Step 4b — (Listing only) Spawn listing-in-contract agents in parallel
+
+**Spawn ALL listing-in-contract agents at the same time** in a single message.
+
+For each listing (index 1..N), call `Agent` with `subagent_type: "listing-in-contract"` and this prompt:
+
+```
+Create a listing and transition it to LISTING_IN_CONTRACT. Here is all the config:
+
+ARRAKIS_BASE_URL: {ARRAKIS_BASE_URL}
+AGENT_TOKEN: {AGENT_TOKEN}
+ADMIN_TOKEN: {ADMIN_TOKEN}
+AGENT_ID: {AGENT_ID}
+OFFICE_ID: {OFFICE_ID}
+TEAM_ID: {TEAM_ID}
+DEAL_TYPE: {SALE or LEASE}
+IS_CANADIAN: {true or false}
+CURRENCY: CAD
+
+Return LISTING_IN_CONTRACT: LISTING_ID=... TX_ID=... DEAL=... on success or ERROR: ... on failure.
+```
+
+Wait for all agents to return. Collect LISTING_ID and TX_ID pairs.
+
+Print summary:
+```
+## Listing In-Contract Complete
+
+| # | Listing ID | TX ID | Deal | Listing Link | TX Link |
+|---|-----------|-------|------|--------------|---------|
+| 1 | {listing_id} | {tx_id} | SALE | https://bolt.{env}realbrokerage.com/listings/{listing_id} | https://bolt.{env}realbrokerage.com/transactions/{tx_id} |
+```
+
+Then ask Step 7 (continue or exit) as normal.
 
 ---
 
@@ -293,6 +345,10 @@ After collecting answers, proceed directly to **Step 4** (spawn builders) → **
 - If `commission-validated` is called when CDA is already approved, the state may skip directly to `COMMISSION_DOCUMENT_SENT`.
 - After `approved-for-closing`: always confirm commission deposit → close → payment-accepted.
 - Always print the bolt UI link in the summary for every transaction.
+- For listing-side (SELLER/LANDLORD) transactions: use `listingCommission` in price-date-info, not just `saleCommission`. Missing `listingCommission` leaves `listingCommissionPercent: null` and causes "Commission is below minimum" at commission-validated.
+- The builder uses **integer percent** (3 = 3%) for commission. The `/deal` endpoint on a submitted transaction uses **decimal** (0.03 = 3%). Never use 3 in a `/deal` call — it returns "Listing commission percent cannot be greater than 15% of the sale price: 300.00%".
+- Transitioning a listing to `LISTING_IN_CONTRACT` requires a pre-existing transaction with `builtFromTransactionId = listingId`. Only `POST /api/v1/transaction-builder/{listingId}/transaction-to-builder` creates this link.
+- Canadian Canadian Canadian: after `cd-approved`, compliance resets — must call `set-compliant` AGAIN before `approved-for-closing`. Skipping this causes `approved-for-closing` to fail.
 - After every summary, always ask Step 7 (continue or exit) — never stop without asking.
 - When looping, ask Q1–Q5 **one at a time**. Never batch them.
 - When the user keeps the same environment, reuse base URLs and admin token (unless they request new credentials).

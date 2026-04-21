@@ -91,37 +91,64 @@ Canadian transactions require CDA generation before the CD steps work. Run these
 ### Step 1 — Set Compliant
 Same as US Step 1.
 
-### Step 2 — Update participant details
+### Step 1a — (SELLER/LANDLORD only) Fix listing-side commission
 
-Before commission-validated, update the buyer and lawyers with required fields.
+For `SELLER` or `LANDLORD` representation transactions, the builder stores `listingCommission` using integer percent (3 = 3%), but the submitted transaction has `listingCommissionPercent: null`. Without this fix, `commission-validated` fails with "Commission is below minimum".
 
-First, get all participants:
 ```bash
-curl -s -X GET "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}" \
-  -H "Authorization: Bearer {ADMIN_TOKEN}" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-for p in d.get('transactionParticipants', []):
-    print(p.get('id'), p.get('role'))
-"
-```
-
-Update buyer (find participant with role BUYER):
-```bash
-curl -s -w "\n%{http_code}" -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/participant/{BUYER_PARTICIPANT_ID}" \
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/deal" \
   -H "Authorization: Bearer {ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
-    "firstName": "QA",
-    "lastName": "Buyer",
-    "emailAddress": "qa-buyer@playwright-example.com",
-    "address": "123 QA Test St, Vancouver, BC V5K 0A1"
+    "salePrice": {"amount": 1000000, "currency": "CAD"},
+    "listingCommission": {"commissionPercent": 0.03, "percentEnabled": true},
+    "estimatedClosingDate": "2026-12-31",
+    "listingDate": "2026-04-21",
+    "listingExpirationDate": "2026-12-31"
   }'
 ```
 
-Update sellers lawyer (role SELLERS_LAWYER) — must include company via `paidViaBusinessEntity.name`:
+Then recalculate:
 ```bash
-curl -s -w "\n%{http_code}" -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/participant/{SELLERS_LAWYER_ID}" \
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/recalculate" \
+  -H "Authorization: Bearer {ADMIN_TOKEN}" \
+  -H "Content-Type: application/json"
+```
+
+**Critical**: `/deal` uses **decimal percent** (0.03 = 3%). Using integer 3 returns "Listing commission percent cannot be greater than 15% of the sale price: 300.00%". Also requires `listingDate` or you get "newStartDate cannot be null".
+
+### Step 2 — Update participant details
+
+Before commission-validated, add BUYERS_LAWYER and update existing lawyers with required fields.
+
+**Add BUYERS_LAWYER** (POST as new participant — required for Canadian transactions):
+```bash
+curl -s -o /dev/null -X POST "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/participant" \
+  -H "Authorization: Bearer {ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participantRole": "BUYERS_LAWYER",
+    "payer": false,
+    "commissionDocumentRecipient": false,
+    "passThrough": false,
+    "personalDeal": false,
+    "firstName": "QA",
+    "lastName": "BuyersLawyer",
+    "emailAddress": "qa-buyers-lawyer@playwright-example.com",
+    "phoneNumber": "16045551234",
+    "address": "200 Legal Blvd, Vancouver, BC V5K 0E2",
+    "paidViaBusinessEntity": {"name": "QA Buyers Law Inc", "nationalIds": []}
+  }'
+```
+
+**Find and update SELLERS_LAWYER** (must include company via `paidViaBusinessEntity.name`):
+```bash
+TX=$(curl -s -X GET "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}" -H "Authorization: Bearer {ADMIN_TOKEN}")
+SL_ID=$(echo "$TX" | python3 -c "import json,sys; ps=json.load(sys.stdin).get('otherParticipants',[]); [print(p['id']) for p in ps if p.get('role')=='SELLERS_LAWYER']" 2>/dev/null | head -1)
+```
+
+```bash
+curl -s -o /dev/null -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/participant/{SL_ID}" \
   -H "Authorization: Bearer {ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -130,20 +157,6 @@ curl -s -w "\n%{http_code}" -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_I
     "emailAddress": "qa-sellers-lawyer@playwright-example.com",
     "address": "100 Law Ave, Vancouver, BC V5K 0D1",
     "paidViaBusinessEntity": {"name": "QA Law Firm Ltd", "nationalIds": []}
-  }'
-```
-
-Update buyers lawyer (role BUYERS_LAWYER):
-```bash
-curl -s -w "\n%{http_code}" -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/participant/{BUYERS_LAWYER_ID}" \
-  -H "Authorization: Bearer {ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "firstName": "QA",
-    "lastName": "BuyersLawyer",
-    "emailAddress": "qa-buyers-lawyer@playwright-example.com",
-    "address": "200 Legal Blvd, Vancouver, BC V5K 0E2",
-    "paidViaBusinessEntity": {"name": "QA Buyers Law Inc", "nationalIds": []}
   }'
 ```
 
@@ -189,6 +202,15 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/commission-valida
 
 ### Step 5 — CD Approved
 Same as US Step 3.
+
+### Step 5a — Set Compliant again (required before approved-for-closing)
+
+After `cd-approved`, compliance resets. Must call `set-compliant` again:
+```bash
+curl -s -w "\n%{http_code}" -X PUT "{ARRAKIS_BASE_URL}/api/v1/transactions/{TX_ID}/set-compliant" \
+  -H "Authorization: Bearer {ADMIN_TOKEN}" \
+  -H "Content-Type: application/json"
+```
 
 ### Step 6 — Approved for Closing
 Same as US Step 4.

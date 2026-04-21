@@ -19,8 +19,16 @@ On failure, output exactly: `ERROR: <step name> — <error message and HTTP stat
 
 ### Step 1 — Create empty builder
 
+For **buy-side** transactions (BUYER/TENANT representation):
 ```bash
 curl -s -X POST "{ARRAKIS_BASE_URL}/api/v1/transaction-builder" \
+  -H "Authorization: Bearer {AGENT_TOKEN}" \
+  -H "Content-Type: application/json"
+```
+
+For **listing-side** transactions (SELLER/LANDLORD representation):
+```bash
+curl -s -X POST "{ARRAKIS_BASE_URL}/api/v1/transaction-builder?type=LISTING" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json"
 ```
@@ -70,11 +78,20 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/locat
 
 ### Step 3 — Set owner-info
 
+Without team connection:
 ```bash
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/owner-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"ownerAgent": {"agentId": "{AGENT_ID}", "role": "REAL"}, "officeId": "{OFFICE_ID}"}'
+```
+
+With team connection (include `teamId`):
+```bash
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/owner-info" \
+  -H "Authorization: Bearer {AGENT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"ownerAgent": {"agentId": "{AGENT_ID}", "role": "REAL"}, "officeId": "{OFFICE_ID}", "teamId": "{TEAM_ID}"}'
 ```
 
 Save the full response. Extract `agentsInfo.ownerAgent[0].id` → PARTICIPANT_ID.
@@ -83,7 +100,7 @@ Save the full response. Extract `agentsInfo.ownerAgent[0].id` → PARTICIPANT_ID
 
 ### Step 4 — Set price-date-info
 
-For **SALE**:
+For **SALE / BUYER** (buy-side):
 ```bash
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price-date-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
@@ -97,7 +114,7 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price
   }'
 ```
 
-For **LEASE**:
+For **LEASE / TENANT** (buy-side):
 ```bash
 curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price-date-info" \
   -H "Authorization: Bearer {AGENT_TOKEN}" \
@@ -111,7 +128,45 @@ curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price
   }'
 ```
 
-**Note:** `closingDate` (not `estimatedClosingDate`). Use `"currency": "CAD"` for Canadian.
+For **SALE / SELLER** (listing-side — requires `?type=LISTING` builder):
+```bash
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price-date-info" \
+  -H "Authorization: Bearer {AGENT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dealType": "SALE",
+    "representationType": "SELLER",
+    "salePrice": {"amount": 500000, "currency": "{CURRENCY}"},
+    "listingCommission": {"commissionPercent": 3, "percentEnabled": true},
+    "saleCommission": {"commissionPercent": 3, "percentEnabled": true},
+    "closingDate": "2026-12-31",
+    "listingDate": "2026-04-21",
+    "listingExpirationDate": "2026-12-31"
+  }'
+```
+
+For **LEASE / LANDLORD** (listing-side — requires `?type=LISTING` builder):
+```bash
+curl -s -X PUT "{ARRAKIS_BASE_URL}/api/v1/transaction-builder/{BUILDER_ID}/price-date-info" \
+  -H "Authorization: Bearer {AGENT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dealType": "LEASE",
+    "representationType": "LANDLORD",
+    "salePrice": {"amount": 500000, "currency": "{CURRENCY}"},
+    "listingCommission": {"commissionPercent": 3, "percentEnabled": true},
+    "saleCommission": {"commissionPercent": 3, "percentEnabled": true},
+    "closingDate": "2026-12-31",
+    "listingDate": "2026-04-21",
+    "listingExpirationDate": "2026-12-31"
+  }'
+```
+
+**Notes:**
+- `closingDate` (not `estimatedClosingDate`). Use `"currency": "CAD"` for Canadian.
+- Listing-side (SELLER/LANDLORD): use `listingCommission` — `saleCommission` alone will leave `listingCommissionPercent: null` on the submitted transaction. Both can be included.
+- Listing-side requires `listingDate` and `listingExpirationDate` or deal update later will fail with "newStartDate cannot be null".
+- Builder uses **integer percent** (3 = 3%). The `/deal` endpoint on a submitted transaction uses **decimal** (0.03 = 3%) — never mix these.
 
 ---
 
